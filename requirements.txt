@@ -1,4 +1,4 @@
 streamlit
-streamlit-cropper
-Pillow
+streamlit-cropper==0.2.2
+Pillow>=9.0.0
 line-bot-sdk
