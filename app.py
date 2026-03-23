@@ -3,143 +3,136 @@ from streamlit_cropper import st_cropper
 from PIL import Image, ImageDraw, ImageFont
 from linebot import LineBotApi
 from linebot.models import RichMenu, RichMenuSize, RichMenuArea, RichMenuBounds, URIAction
+import google.generativeai as genai
 import io
 import json
 
-# --- 頁面設定 (手機優化) ---
-st.set_page_config(page_title="LINE 專業選單製作", layout="centered")
-st.title("📱 LINE 3x2 選單產生器")
+# --- 頁面初始設定 ---
+st.set_page_config(page_title="White 6 智能選單助手", layout="centered")
+st.title("🤖 White 6 選單與 AI 助手")
 
-# --- 金鑰檢查 ---
+# --- 從 Secrets 讀取金鑰 ---
 try:
-    TOKEN = st.secrets["LINE_CHANNEL_ACCESS_TOKEN"]
-    line_bot_api = LineBotApi(TOKEN)
-except:
-    st.error("❌ 請設定 Secrets: LINE_CHANNEL_ACCESS_TOKEN")
+    LINE_TOKEN = st.secrets["LINE_CHANNEL_ACCESS_TOKEN"]
+    GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
+    
+    line_bot_api = LineBotApi(LINE_TOKEN)
+    genai.configure(api_key=GEMINI_KEY)
+    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"❌ 請檢查 Secrets 設定 (LINE_TOKEN 或 GEMINI_KEY)")
     st.stop()
 
-# --- 初始化 Session State (用於載入/儲存) ---
-if 'menu_config' not in st.session_state:
-    st.session_state.menu_config = [{"name": f"功能 {i+1}", "url": "https://"} for i in range(6)]
-
-# --- 側邊欄：樣式與存取功能 ---
+# --- 側邊欄：AI 聊天測試與存檔 ---
 with st.sidebar:
-    st.header("⚙️ 樣式設定")
-    line_color = st.color_picker("分隔線顏色", "#FFFFFF")
-    line_width = st.slider("分隔線粗細", 1, 10, 3)
-    font_size = st.slider("文字大小", 20, 100, 50)
-    text_color = st.color_picker("文字顏色", "#FFFFFF")
-    bg_opacity = st.slider("文字底色透明度", 0, 255, 120)
+    st.header("🧠 White 6 AI 測試")
+    user_input = st.text_input("對 White 6 說點什麼...", placeholder="例如：幫我寫段選單文案")
+    if user_input:
+        with st.spinner("White 6 思考中..."):
+            response = ai_model.generate_content(f"你是助理White 6，請回覆：{user_input}")
+            st.write(f"**White 6:** {response.text}")
     
     st.divider()
-    st.header("💾 存檔與載入")
-    # 匯出設定
-    config_json = json.dumps(st.session_state.menu_config)
-    st.download_button("下載目前的設定檔 (.json)", config_json, file_name="rich_menu_config.json")
+    st.header("🎨 樣式與存檔")
+    line_color = st.color_picker("線條與文字顏色", "#FFFFFF")
+    font_size = st.slider("標籤字體大小", 30, 80, 50)
     
-    # 匯入設定
-    uploaded_config = st.file_uploader("載入舊的設定檔", type=['json'])
-    if uploaded_config:
-        st.session_state.menu_config = json.load(uploaded_config)
-        st.success("設定已載入！")
+    # 載入與匯出 JSON
+    uploaded_json = st.file_uploader("載入設定檔 (.json)", type=['json'])
+    if 'menu_config' not in st.session_state:
+        st.session_state.menu_config = [{"name": f"功能 {i+1}", "url": "https://"} for i in range(6)]
+    
+    if uploaded_json:
+        st.session_state.menu_config = json.load(uploaded_json)
+        st.success("設定已載入")
 
-# --- 步驟 1: 圖片處理 (框固定，圖縮放) ---
-st.header("1. 調整背景圖")
-img_file = st.file_uploader("上傳原始照片", type=['png', 'jpg', 'jpeg'])
+# --- 第一步：固定框圖片處理 ---
+st.header("1. 製作選單背景")
+st.info("💡 手機操作：請用手指**縮放或拖動照片**，讓畫面進入白色框內。")
+img_file = st.file_uploader("上傳背景圖", type=['png', 'jpg', 'jpeg'])
 
 if img_file:
+    # 讀取並標準化
     raw_img = Image.open(img_file).convert("RGB")
     
-    # 手機版縮放介面
+    # 核心：固定比例裁切 (框不動，圖動)
     cropped_img = st_cropper(
         raw_img, 
         aspect_ratio=(2500, 843), 
         box_color=line_color,
-        key="main_cropper"
+        key="white6_cropper"
     )
     
-    # 調整至標準尺寸
-    base_img = cropped_img.resize((2500, 843))
-    
-    # --- 關鍵：自動繪製分隔線與文字 ---
-    draw = ImageDraw.Draw(base_img, "RGBA")
+    # 強制重繪為 LINE 規格
+    final_canvas = cropped_img.resize((2500, 843))
+    draw = ImageDraw.Draw(final_canvas, "RGBA")
     w, h = 2500, 843
     cw, ch = w // 3, h // 2
-    
+
     # 繪製分隔線
-    for i in range(1, 3): # 直線
-        draw.line([(i*cw, 0), (i*cw, h)], fill=line_color, width=line_width)
-    draw.line([(0, ch), (w, ch)], fill=line_color, width=line_width) # 橫線
+    draw.line([(cw, 0), (cw, h)], fill=line_color, width=5)
+    draw.line([(cw*2, 0), (cw*2, h)], fill=line_color, width=5)
+    draw.line([(0, ch), (w, ch)], fill=line_color, width=5)
 
-    # --- 步驟 2: 設定 6 格資訊 ---
-    st.header("2. 設定內容")
-    updated_config = []
+    # --- 第二步：設定格點資訊 ---
+    st.header("2. 設定 App 名稱與連結")
+    new_data = []
     
-    # 使用直列排版，更適合手機滑動
+    # 針對手機直式螢幕優化，使用摺疊選單
     for i in range(6):
-        pos_names = ["左上", "中上", "右上", "左下", "中下", "右下"]
-        with st.expander(f"第 {i+1} 格 ({pos_names[i]}) 設定", expanded=(i==0)):
-            name = st.text_input("顯示名稱", value=st.session_state.menu_config[i]["name"], key=f"n_{i}")
+        pos_labels = ["左上", "中上", "右上", "左下", "中下", "右下"]
+        with st.expander(f"第 {i+1} 格 ({pos_labels[i]})", expanded=(i==0)):
+            name = st.text_input("App 名稱", value=st.session_state.menu_config[i]["name"], key=f"n_{i}")
             url = st.text_input("LIFF URL", value=st.session_state.menu_config[i]["url"], key=f"u_{i}")
-            updated_config.append({"name": name, "url": url})
+            new_data.append({"name": name, "url": url})
             
-            # 在圖片上繪製文字標籤
+            # 在圖片上繪製標籤 (半透明黑底+白字)
             row, col = i // 3, i % 3
-            # 繪製文字背景半透明條
-            draw.rectangle([col*cw, (row+1)*ch-80, (col+1)*cw, (row+1)*ch], fill=(0,0,0,bg_opacity))
-            # 寫入文字 (這裡使用預設字體，若需中文字體需指定 .ttf 路徑)
-            try:
-                # 嘗試載入系統中文字體，若失敗則用預設
-                font = ImageFont.truetype("Arial Unicode.ttf", font_size)
-            except:
-                font = ImageFont.load_default()
-            
-            draw.text((col*cw + 20, (row+1)*ch - 70), name, fill=text_color, font=font)
+            draw.rectangle([col*cw, (row+1)*ch-80, (col+1)*cw, (row+1)*ch], fill=(0,0,0,100))
+            draw.text((col*cw + 20, (row+1)*ch - 75), name, fill=line_color) # 預設字體
 
-    st.session_state.menu_config = updated_config
-    
-    # 預覽最終合成圖
-    st.header("預覽合成效果")
-    st.image(base_img, use_container_width=True)
+    st.session_state.menu_config = new_data
 
-    # --- 步驟 3: 發布 ---
-    if st.button("🚀 壓縮並發布至 LINE", use_container_width=True):
+    # 預覽合成成果
+    st.image(final_canvas, caption="📸 合成預覽：包含分隔線與標籤", use_container_width=True)
+
+    # --- 第三步：發布 ---
+    if st.button("🚀 發布並更新 LINE 選單", use_container_width=True):
         try:
-            with st.spinner("同步中..."):
-                # 1. 建立選單結構
+            with st.spinner("White 6 正在連線 LINE 伺服器..."):
+                # 1. 建立點擊區域
                 areas = [
                     RichMenuArea(
                         bounds=RichMenuBounds(x=(i%3)*cw, y=(i//3)*ch, width=cw, height=ch),
-                        action=URIAction(label=updated_config[i]["name"], uri=updated_config[i]["url"])
+                        action=URIAction(label=new_data[i]["name"], uri=new_data[i]["url"])
                     ) for i in range(6)
                 ]
+                
+                # 2. 建立選單物件
                 rm_obj = RichMenu(
                     size=RichMenuSize(width=2500, height=843),
                     selected=True,
-                    name="Advanced_Menu",
+                    name="White6_AI_Menu",
                     chat_bar_text="打開選單",
                     areas=areas
                 )
                 
+                # 3. 註冊與上傳 (自動瘦身)
                 rm_id = line_bot_api.create_rich_menu(rich_menu=rm_obj)
-                
-                # 2. 圖片瘦身
                 img_io = io.BytesIO()
-                base_img.save(img_io, format='JPEG', quality=85)
-                img_bytes = img_io.getvalue()
+                final_canvas.save(img_io, format='JPEG', quality=85, optimize=True)
+                line_bot_api.set_rich_menu_image(rm_id, 'image/jpeg', img_io.getvalue())
                 
-                # 3. 上傳與設為預設
-                line_bot_api.set_rich_menu_image(rm_id, 'image/jpeg', img_bytes)
+                # 4. 設為預設並清理
                 line_bot_api.set_default_rich_menu(rm_id)
-                
-                # 4. 清理舊選單
                 for m in line_bot_api.get_rich_menu_list():
                     if m.rich_menu_id != rm_id:
                         line_bot_api.delete_rich_menu(m.rich_menu_id)
                 
-                st.success("✅ 選單更新成功！")
+                st.success("✅ 發布成功！請查看手機 LINE。")
                 st.balloons()
         except Exception as e:
-            st.error(f"錯誤: {e}")
+            st.error(f"❌ 發生錯誤: {e}")
+
 else:
-    st.info("👋 請上傳一張照片開始製作。")
+    st.info("👋 你好！我是 White 6，請先上傳一張背景圖，我會幫你製作精美的選單。")
