@@ -19,7 +19,7 @@ try:
     
     line_bot_api = LineBotApi(LINE_TOKEN)
     genai.configure(api_key=GEMINI_KEY)
-    ai_model = genai.GenerativeModel('gemini-1.5-flash')
+    ai_model = genai.GenerativeModel('models/gemini-1.5-flash')
 except Exception as e:
     st.error(f"❌ 金鑰讀取失敗，請確認 Secrets 設定。")
     st.info("💡 提示：請在 Secrets 檢查是否包含 LINE_TOKEN 與 GEMINI_KEY 標籤。")
