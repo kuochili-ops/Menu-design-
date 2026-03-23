@@ -2,3 +2,5 @@ streamlit
 streamlit-cropper==0.2.2
 Pillow
 line-bot-sdk
+google-generativeai
+
