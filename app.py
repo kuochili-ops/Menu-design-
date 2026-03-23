@@ -13,8 +13,8 @@ st.title("🤖 White 6 選單與 AI 助手")
 
 # --- 從 Secrets 讀取金鑰 ---
 try:
-    LINE_TOKEN = st.secrets["w6E0YuzFt/Jk+bgyJd76V+q3J61VL/k3AlfYVoJ0eUZVfpkjeTX3FjUOyZkkowTO891ToX6fAsip7VhY4Ltb4J2g7vA4DG+UiOuF/ZLeib5nGlbzJ4Zs7qbMbLWc0mqYEkifpz8/t3v+zDXBD2Zb9wdB04t89/1O/w1cDnyilFU="]
-    GEMINI_KEY = st.secrets["IzaSyCxdmSSO1B_uGRjH0L77E6tX5hQg9W_N9g"]
+    LINE_TOKEN = st.secrets["LINE_CHANNEL_ACCESS_TOKEN"]
+    GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
     
     line_bot_api = LineBotApi(LINE_TOKEN)
     genai.configure(api_key=GEMINI_KEY)
